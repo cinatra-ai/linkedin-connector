@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+
+# Build output (tsc outDir, see tsconfig.json)
+dist/
+
+# Test output
+coverage/
+
+# Lockfiles are intentionally not committed (see ci.yml: installs resolve fresh)
+pnpm-lock.yaml
+package-lock.json
+
+# Packed tarballs (npm pack)
+*.tgz
+
+# Secrets — never commit
+.env
+.env.*
+
+# Logs
+*.log
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
