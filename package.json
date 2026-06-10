@@ -4,6 +4,15 @@
   "license": "Apache-2.0",
   "type": "module",
   "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./register": "./src/register.ts",
+    "./settings-page": "./src/settings-page.tsx",
+    "./setup-page": "./src/setup-page.tsx",
+    "./mcp-handlers": "./src/mcp/handlers.ts",
+    "./mcp-module": "./src/mcp/module.ts",
+    "./actions": "./src/actions.ts"
+  },
   "types": "./src/index.ts",
   "dependencies": {
     "class-variance-authority": "^0.7.1",
@@ -40,6 +49,11 @@
         },
         "requirement": "required"
       }
-    ]
+    ],
+    "serverEntry": "./register",
+    "requestedHostPorts": [
+      "capabilities"
+    ],
+    "sdkAbiRange": "^2"
   }
 }
