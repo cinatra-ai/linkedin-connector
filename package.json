@@ -10,6 +10,7 @@
   "exports": {
     ".": "./src/index.ts",
     "./register": "./src/register.ts",
+    "./deps": "./src/deps.ts",
     "./settings-page": "./src/settings-page.tsx",
     "./setup-page": "./src/setup-page.tsx",
     "./mcp-handlers": "./src/mcp/handlers.ts",
