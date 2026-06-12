@@ -14,8 +14,7 @@
     "./settings-page": "./src/settings-page.tsx",
     "./setup-page": "./src/setup-page.tsx",
     "./mcp-handlers": "./src/mcp/handlers.ts",
-    "./mcp-module": "./src/mcp/module.ts",
-    "./actions": "./src/actions.ts"
+    "./mcp-module": "./src/mcp/module.ts"
   },
   "types": "./src/index.ts",
   "dependencies": {
@@ -57,10 +56,22 @@
           "range": "*"
         },
         "requirement": "required"
+      },
+      {
+        "packageName": "@cinatra-ai/linkedin-oauth-connector",
+        "kind": "connector",
+        "edgeType": "runtime",
+        "versionConstraint": {
+          "kind": "semver-range",
+          "range": "*"
+        },
+        "requirement": "required"
       }
     ],
     "serverEntry": "./register",
     "requestedHostPorts": [
+      "authSession",
+      "nango",
       "capabilities"
     ],
     "sdkAbiRange": "^2"
