@@ -4,10 +4,12 @@ import "server-only";
 // `linkedInSocialMediaConnector` implements the
 // @cinatra-ai/social-media-connector `SocialMediaConnector` contract.
 //
-// Concrete LinkedIn transport adapter: wraps `publishLinkedInPost` from the
-// host's `@/lib/linkedin-api` so the facade can route LinkedIn publishes
-// without callers reaching into provider-specific code. Status is reported
-// via `getLinkedInAPIStatus`, mapped to the provider-neutral
+// Concrete LinkedIn transport adapter: wraps the host-bound deps slot's
+// `publishPost` (cinatra#172 Stage H4 — `@/lib/linkedin-api` stays host-side;
+// the slot is bound at serverEntry activation by `register(ctx)` adapting
+// `@cinatra-ai/host:linkedin-connection`) so the facade can route LinkedIn
+// publishes without callers reaching into provider-specific code. Status is
+// reported via the slot's `getStatus`, mapped to the provider-neutral
 // SocialMediaConnectorStatusResult shape.
 // ---------------------------------------------------------------------------
 
@@ -17,7 +19,7 @@ import type {
   SocialMediaPost,
   SocialMediaPublishReceipt,
 } from "@cinatra-ai/sdk-extensions/social-contract";
-import { getLinkedInAPIStatus, publishLinkedInPost } from "@/lib/linkedin-api";
+import { getLinkedInDeps } from "./deps";
 
 export const linkedInSocialMediaConnector: SocialMediaConnector = {
   definition: {
@@ -35,7 +37,7 @@ export const linkedInSocialMediaConnector: SocialMediaConnector = {
     post: SocialMediaPost,
     opts?: { userId?: string },
   ): Promise<SocialMediaPublishReceipt> {
-    const published = await publishLinkedInPost({
+    const published = await getLinkedInDeps().publishPost({
       linkedinAccountId: post.accountId,
       destinationType: post.destinationType,
       destinationId: post.destinationId,
@@ -51,7 +53,7 @@ export const linkedInSocialMediaConnector: SocialMediaConnector = {
   },
 
   async getStatus(): Promise<SocialMediaConnectorStatusResult> {
-    const status = await getLinkedInAPIStatus();
+    const status = await getLinkedInDeps().getStatus();
     return {
       status: status.status === "connected" ? "connected" : "not_connected",
       detail: status.detail,
