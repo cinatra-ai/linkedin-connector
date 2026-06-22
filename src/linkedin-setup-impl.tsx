@@ -117,6 +117,7 @@ export async function LinkedInConnectorPageImpl(props: LinkedInConnectorPageImpl
             connectLabel="Connect LinkedIn"
             reconnectLabel="Reconnect"
             nangoFrontendConfig={nangoFrontendConfig}
+            disabled={!credentialsConfigured}
             prerequisiteErrorMessage={
               credentialsConfigured
                 ? undefined
