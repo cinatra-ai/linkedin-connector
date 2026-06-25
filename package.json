@@ -1,6 +1,6 @@
 {
   "name": "@cinatra-ai/linkedin-connector",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "license": "Apache-2.0",
   "type": "module",
   "files": [
@@ -79,7 +79,8 @@
       "nango",
       "capabilities"
     ],
-    "sdkAbiRange": "^2"
+    "sdkAbiRange": "^2",
+    "providerConfigKey": "cinatra-linkedin"
   },
   "scripts": {
     "lint": "eslint . --no-inline-config"
