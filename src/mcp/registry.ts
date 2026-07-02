@@ -2,12 +2,15 @@ import { z } from "zod";
 import type { ExtensionMcpToolServer, ExtensionMcpToolResult } from "@cinatra-ai/sdk-extensions";
 import { createLinkedInPrimitiveHandlers, destinationsSchema, publishPostSchema } from "./handlers";
 
-// The four `linkedin_*` handlers read only `request.input` (account ids etc. come
-// from the parsed input, never from `request.actor`). Authorization is enforced
-// upstream at the MCP boundary (kernel), so a static model actor is passed and the
-// host `mcpRequestContextStorage` read is dropped — keeping the connector off
-// `@cinatra-ai/mcp-server`.
-const STATIC_AGENT_ACTOR = { actorType: "model", source: "agent" } as const;
+// `linkedin_post_publish` binds the acted-on account to the TRUSTED actor of
+// the current request, resolved SERVER-SIDE. The MCP SDK transport carries no
+// actor on `registerTool`'s handler args, so the host provides a resolver that
+// reads the request/run context; the registry stamps the resolved identity
+// onto the actor the handler sees. When no resolver is wired the userId is
+// absent → a shared app-scope account (the existing behavior), never a
+// model-supplied id. This keeps the connector off `@cinatra-ai/mcp-server`
+// while still binding identity server-side.
+export type ConnectorActorResolver = () => Promise<{ userId?: string; orgId?: string }>;
 
 const TOOL_META: Record<string, { description: string; inputSchema: z.ZodTypeAny }> = {
   "linkedin_status": {
@@ -28,7 +31,10 @@ const TOOL_META: Record<string, { description: string; inputSchema: z.ZodTypeAny
   },
 };
 
-export function registerLinkedInPrimitives(server: ExtensionMcpToolServer) {
+export function registerLinkedInPrimitives(
+  server: ExtensionMcpToolServer,
+  resolveActor?: ConnectorActorResolver,
+) {
   const handlers = createLinkedInPrimitiveHandlers();
 
   for (const [name, handler] of Object.entries(handlers)) {
@@ -41,10 +47,18 @@ export function registerLinkedInPrimitives(server: ExtensionMcpToolServer) {
         inputSchema: meta.inputSchema,
       },
       async (input: unknown): Promise<ExtensionMcpToolResult> => {
+        // Build the actor SERVER-SIDE from the host-provided resolver; never
+        // trust an inbound/model-supplied actor.
+        const resolved = resolveActor ? await resolveActor() : {};
         const result = await handler({
           primitiveName: name,
           input,
-          actor: STATIC_AGENT_ACTOR,
+          actor: {
+            actorType: "model",
+            source: "agent",
+            userId: resolved.userId,
+            orgId: resolved.orgId,
+          },
           mode: "agentic",
         });
         return {

@@ -1,7 +1,17 @@
-import { registerLinkedInPrimitives } from "./registry";
+import { registerLinkedInPrimitives, type ConnectorActorResolver } from "./registry";
+import type { ExtensionMcpToolServer } from "@cinatra-ai/sdk-extensions";
 
-export function createLinkedInModule() {
+/**
+ * @param options.resolveActor Host-provided resolver for the trusted request
+ *   subject (userId/orgId). The host passes this uniformly to every connector
+ *   module factory; the LinkedIn publish primitive binds the acted-on account
+ *   to the resolved identity, never to tool input. A factory called without
+ *   options (e.g. the in-process primitive-handlers capture) still registers —
+ *   those handlers receive the trusted actor directly on `request.actor`.
+ */
+export function createLinkedInModule(options?: { resolveActor?: ConnectorActorResolver }) {
   return {
-    registerCapabilities: registerLinkedInPrimitives,
+    registerCapabilities: (server: ExtensionMcpToolServer) =>
+      registerLinkedInPrimitives(server, options?.resolveActor),
   };
 }
