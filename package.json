@@ -80,7 +80,8 @@
       "capabilities"
     ],
     "sdkAbiRange": "^2",
-    "providerConfigKey": "cinatra-linkedin"
+    "providerConfigKey": "cinatra-linkedin",
+    "consumes": []
   },
   "scripts": {
     "lint": "eslint . --no-inline-config"
