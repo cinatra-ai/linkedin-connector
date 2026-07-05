@@ -49,8 +49,8 @@
     "kind": "connector",
     "displayName": "LinkedIn",
     "vendor": {
-      "key": "linkedin",
-      "name": "LinkedIn"
+      "key": "cinatra-ai",
+      "name": "Cinatra"
     },
     "dependencies": [
       {
