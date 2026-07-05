@@ -557,6 +557,24 @@ export function validateCommon(packageRoot) {
     errors.push(`cinatra.apiVersion must be ${JSON.stringify(API_VERSION)} (got ${JSON.stringify(cinatra.apiVersion ?? null)})`);
   }
   const selfPkgName = typeof pkg.name === "string" ? pkg.name : null;
+
+  // ---- vendor identity (connector kind only — `vendor` is a connector-shape
+  // concept tied to the @<vendor>/<slug>-connector name convention; artifact
+  // and workflow package shapes don't carry cinatra.vendor at all) ----
+  // A first-party @cinatra-ai/* connector (not a vendored bundle) authored,
+  // published, and maintained by Cinatra must self-declare vendor cinatra-ai —
+  // the integrated third-party platform (e.g. "LinkedIn") belongs in
+  // displayName, not vendor. Vendored packages (cinatra.vendoredFrom present)
+  // are exempt: they legitimately carry their upstream vendor identity.
+  if (cinatra.kind === "connector" && selfPkgName?.startsWith(`${FIRST_PARTY_SCOPE}/`) && cinatra.vendoredFrom == null) {
+    const vendor = cinatra.vendor;
+    if (!isObj(vendor) || vendor.key !== FIRST_PARTY_SCOPE.slice(1) || vendor.name !== "Cinatra") {
+      errors.push(
+        `first-party connector "${selfPkgName}" must declare cinatra.vendor = { "key": "cinatra-ai", "name": "Cinatra" } (got ${JSON.stringify(vendor ?? null)}) — the integrated platform belongs in displayName, not vendor; use cinatra.vendoredFrom to mark a genuinely vendored bundle`,
+      );
+    }
+  }
+
   if (cinatra.dependencies === null) {
     // explicit null is MALFORMED at install — "no dependencies" is spelled [].
     errors.push('cinatra.dependencies must be an array (declare "no dependencies" as []), not null');
