@@ -6,45 +6,72 @@
 // lazily from its own serverEntry configuration, so publish routing reaches
 // LinkedIn without any host (or facade) import of this package.
 //
-// hostInternal pinned-empty sweep (cinatra#172 Stage H4): this entry ALSO
-// binds the connector's host deps slot (`./deps`) by adapting the per-concern
-// host service published in the capability registry
-// (`@cinatra-ai/host:linkedin-connection`) — the settings page, the transport
-// adapter, and the MCP handlers stop importing `@/lib/linkedin-api` and
-// resolve `getLinkedInDeps()` from separately-compiled bundles instead. Every
-// adapter member resolves its host service LAZILY at call time, so activation
-// order against the host's boot imports never matters.
+// Vendor-publish-direction inversion (cinatra#975 Wave 3, epic #978 — the
+// Wave-2 widget-auth precedent, wordpress-mcp-connector#56 / drupal#58): this
+// connector now OWNS the LinkedIn API client (`./linkedin-api`, relocated from
+// core `src/lib/linkedin-api.ts`) and REGISTERS it under the SAME
+// `@cinatra-ai/host:linkedin-connection` capability id the host published in
+// the cinatra#172 Stage H4 era — a provider flip, no SDK contract change. The
+// client persists through the host `connector-config` capability, resolves
+// credentials through the connector-authored `nango-system` surface, and gates
+// credential use through the `@cinatra-ai/host:instance-connection-gate` seam
+// (cinatra#1077 — authz stays core). Until the follow-up core-eviction PR
+// lands, the host's own registration coexists under the same id (the registry
+// keys providers by packageName); both impls are behavior-equivalent, and this
+// connector's OWN surfaces (deps slot below) bind directly to the
+// connector-owned client.
+//
+// The published impl STRIPS `accessToken`/`tokenExpiresAt` from every account
+// row (`linkedin_accounts_list` returns these rows to callers) — the identical
+// least-privilege hardening the host's registration carries (codex H4 round-1
+// finding 1). The publish path resolves tokens host-side from Nango.
+//
+// ADDITIVE members beyond the SDK `HostLinkedInConnectionService` contract
+// (resolved STRUCTURALLY by core, the `HostExternalMcpRegistrySetupSurface`
+// precedent — no packages/sdk-extensions change):
+//   - `saveAccountFromNangoConnection` — the linkedin branch of the host's
+//     BLOCKING nango-connection materializer re-points here at core eviction.
+//     Deliberately NOT registered as a second `nango-connection-materializer`
+//     provider now: the nango dispatch runs EVERY provider, so a second
+//     linkedin handler would double-materialize each save during the interim.
+//   - `getLoggingSettings` — the telemetry-page read (`enabled` + the
+//     host-owned #981 capture directory).
 //
 // Registration-only (no I/O) — safe under required-extension-activation's
-// prod-boot arming, and probe-safe (the hot-update probe's `resolveProviders`
-// reads stay live, so a probe-bound deps slot resolves identically to an
-// activation-bound one).
+// prod-boot arming, and probe-safe (constructing the client and its published
+// surface does no host-service resolution; every member resolves lazily at
+// call time, so activation order against the host's boot imports never
+// matters and the hot-update probe's `resolveProviders` reads stay live).
 //
 // SDK imports here are TYPE-ONLY (host-peer value-import gate): the provider
-// impl and the host service both travel as DATA through `ctx.capabilities`;
-// the capability id is an inlined string literal; the service shape is a
-// local structural type so the connector compiles against ANY host SDK it
+// impls and the host services all travel as DATA through `ctx.capabilities`;
+// the capability ids are inlined string literals; the service shapes are
+// local structural types so the connector compiles against ANY host SDK it
 // can meet during skew.
 
 import "server-only";
 import type { ExtensionHostContext } from "@cinatra-ai/sdk-extensions";
 import { linkedInSocialMediaConnector } from "./connector";
 import { registerLinkedInConnector, type LinkedInConnectorDeps } from "./deps";
+import {
+  createLinkedInApiClient,
+  type LinkedInApiClient,
+  type LinkedInAccountConnection,
+  type LinkedInConnectorConfigSurface,
+  type LinkedInConnectionGateSurface,
+  type LinkedInNangoSurface,
+} from "./linkedin-api";
 
 const PACKAGE_NAME = "@cinatra-ai/linkedin-connector";
 
-// Local STRUCTURAL shape of the per-concern host service this connector
-// adapts into its deps slot.
-type HostLinkedInConnectionShape = {
-  getStatus: LinkedInConnectorDeps["getStatus"];
-  getSettings: LinkedInConnectorDeps["getSettings"];
-  listAccounts: LinkedInConnectorDeps["listAccounts"];
-  listDestinations: LinkedInConnectorDeps["listDestinations"];
-  publishPost: LinkedInConnectorDeps["publishPost"];
-};
+/** The #981 capture channel the relocated client logs request/response
+ * entries under (pre-relocation: the core client's `data/logs/linkedin-api`
+ * directory — the channel keeps the name). */
+const LINKEDIN_CAPTURE_CHANNEL = "linkedin-api";
 
 /** Lazy per-concern host-service resolution (fail-loud on a missing service —
- * the host boot wiring publishes it before any connector call runs). */
+ * the host boot wiring / system-extension activation publishes these before
+ * any connector call runs). */
 function hostService<T>(ctx: ExtensionHostContext, capability: string): T {
   const provider = ctx.capabilities.resolveProviders(capability)[0];
   if (!provider) {
@@ -56,22 +83,106 @@ function hostService<T>(ctx: ExtensionHostContext, capability: string): T {
   return provider.impl as T;
 }
 
-/** Build the host-bound deps from the per-concern host service. Every member
- * resolves LAZILY at call time — constructing this object does no I/O and no
- * resolution (probe-safe). */
-function buildHostBoundDeps(ctx: ExtensionHostContext): LinkedInConnectorDeps {
-  const linkedin = () =>
-    hostService<HostLinkedInConnectionShape>(ctx, "@cinatra-ai/host:linkedin-connection");
+/** Build the connector-owned LinkedIn API client over lazily-resolving host
+ * bindings (construction does no resolution and no I/O — probe-safe). */
+function buildLinkedInApiClient(ctx: ExtensionHostContext): LinkedInApiClient {
+  let warnedCaptureUnavailable = false;
+  return createLinkedInApiClient({
+    config: () =>
+      hostService<LinkedInConnectorConfigSurface>(ctx, "@cinatra-ai/host:connector-config"),
+    nango: () => hostService<LinkedInNangoSurface>(ctx, "nango-system"),
+    gate: () =>
+      hostService<LinkedInConnectionGateSurface>(ctx, "@cinatra-ai/host:instance-connection-gate"),
+    // #981 request/response capture — ambient `ctx.logger` members, OPTIONAL
+    // by ABI (added at 2.3.0). On an older host (skew) capture degrades to a
+    // warn-once skip: telemetry only, never the API behavior; the client's
+    // own `loggingEnabled` gate and redaction posture are unchanged.
+    capture: async (entry) => {
+      if (typeof ctx.logger.capture === "function") {
+        await ctx.logger.capture(LINKEDIN_CAPTURE_CHANNEL, entry);
+        return;
+      }
+      if (!warnedCaptureUnavailable) {
+        warnedCaptureUnavailable = true;
+        ctx.logger.warn(
+          "logger.capture is unavailable on this host (pre-2.3.0 SDK ABI) — LinkedIn request/response capture is skipped.",
+        );
+      }
+    },
+    captureDirectory: () =>
+      typeof ctx.logger.captureDirectory === "function"
+        ? ctx.logger.captureDirectory(LINKEDIN_CAPTURE_CHANNEL)
+        : "",
+  });
+}
+
+/** Strip host-only token material from a published account row: legacy stored
+ * rows may carry an OAuth bearer (`accessToken`/`tokenExpiresAt`), and the
+ * `linkedin_accounts_list` MCP primitive returns published rows to callers.
+ * Identical to the stripping the host's own registration carries. */
+function stripLinkedInAccountTokens(account: LinkedInAccountConnection) {
+  const { accessToken: _hostOnlyToken, tokenExpiresAt: _hostOnlyExpiry, ...row } = account;
+  return row;
+}
+
+/** The `@cinatra-ai/host:linkedin-connection` impl this connector registers:
+ * the SDK-contract members (token-stripped) plus the additive members the
+ * core-eviction flip resolves structurally (see the module header). */
+function buildPublishedLinkedInConnectionService(client: LinkedInApiClient) {
   return {
-    getStatus: () => linkedin().getStatus(),
-    getSettings: () => linkedin().getSettings(),
-    listAccounts: () => linkedin().listAccounts(),
-    listDestinations: (options) => linkedin().listDestinations(options),
+    getStatus: () => client.getStatus(),
+    getSettings: async () => {
+      const { accounts, ...settings } = await client.getSettings();
+      return { ...settings, accounts: accounts.map(stripLinkedInAccountTokens) };
+    },
+    listAccounts: async () => (await client.listAccounts()).map(stripLinkedInAccountTokens),
+    listDestinations: (options?: { scope?: "app" | "user"; userId?: string }) =>
+      client.listDestinations(options),
+    // WRITER — publishes to the remote LinkedIn network; reached only through
+    // the host's MCP dispatch + actor gating and the social-media facade's
+    // publish routing (the SDK contract's TRUST note). The account-addressed
+    // and per-user token reads inside gate through the
+    // `instance-connection-gate` seam with the unchanged
+    // `source: "linkedin-api"` audit labels.
+    publishPost: (input: {
+      linkedinAccountId: string;
+      destinationType: "member" | "organization";
+      destinationId: string;
+      content: string;
+      userId?: string;
+    }) => client.publishPost(input),
+    // ADDITIVE — the linkedin branch of the host's BLOCKING nango
+    // connection-save materializer (row upsert; the return row is deliberately
+    // dropped so token-adjacent material never rides the published surface).
+    saveAccountFromNangoConnection: async (input: {
+      providerConfigKey: string;
+      connectionId: string;
+    }): Promise<void> => {
+      await client.saveAccountFromNangoConnection(input);
+    },
+    // ADDITIVE — the telemetry-page logging read (enabled flag + the
+    // host-owned #981 capture directory as a read-only display value).
+    getLoggingSettings: () => client.getLoggingSettings(),
+  };
+}
+
+/** Build the host-bound deps from the connector-owned client (token-stripped
+ * via the published surface — the deps row shapes carry no token fields).
+ * Every member resolves its host surfaces LAZILY at call time — constructing
+ * this object does no I/O and no resolution (probe-safe). */
+function buildHostBoundDeps(
+  service: ReturnType<typeof buildPublishedLinkedInConnectionService>,
+): LinkedInConnectorDeps {
+  return {
+    getStatus: () => service.getStatus(),
+    getSettings: () => service.getSettings(),
+    listAccounts: () => service.listAccounts(),
+    listDestinations: (options) => service.listDestinations(options),
     // WRITER — only ever reached through the host's MCP dispatch + actor
     // gating and the social-media facade's publish routing (the host
     // service's TRUST note documents the shared in-process capability id;
     // gating posture is unchanged vs the static import).
-    publishPost: (input) => linkedin().publishPost(input),
+    publishPost: (input) => service.publishPost(input),
   };
 }
 
@@ -80,8 +191,22 @@ export function register(ctx: ExtensionHostContext): void {
     packageName: PACKAGE_NAME,
     impl: linkedInSocialMediaConnector,
   });
-  // Bind the host deps slot. Always-bind: re-activation — incl. a hot-update
-  // digest swap — re-binds fresh lazy resolvers, so a stale deps object can
-  // never outlive its digest.
-  registerLinkedInConnector(buildHostBoundDeps(ctx));
+
+  // cinatra#975 Wave 3 — the connector-owned LinkedIn client, registered under
+  // the SAME capability id the host published (provider flip; the registry
+  // keys providers by packageName, so the host's registration coexists until
+  // the core-eviction follow-up removes it — both impls behavior-equivalent).
+  const client = buildLinkedInApiClient(ctx);
+  const service = buildPublishedLinkedInConnectionService(client);
+  ctx.capabilities.registerProvider("@cinatra-ai/host:linkedin-connection", {
+    packageName: PACKAGE_NAME,
+    impl: service,
+  });
+
+  // Bind the host deps slot — now to the connector-owned client (via the
+  // token-stripped published surface), no longer to the host's impl of the
+  // linkedin-connection service. Always-bind: re-activation — incl. a
+  // hot-update digest swap — re-binds fresh lazy resolvers, so a stale deps
+  // object can never outlive its digest.
+  registerLinkedInConnector(buildHostBoundDeps(service));
 }
