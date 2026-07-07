@@ -2,6 +2,8 @@
 
 Link one or more LinkedIn accounts to your workspace so agents can publish posts to a member's own feed or to any organization page the connected member is allowed to manage. Once connected, LinkedIn shows up as a publishing destination everywhere Cinatra posts to social networks. Install `@cinatra-ai/linkedin-oauth-connector` first to supply the LinkedIn app credentials, then each user connects their own account from **Settings > Connections > LinkedIn**.
 
+The connector owns its LinkedIn API client and registers it as the `@cinatra-ai/host:linkedin-connection` capability at activation — the Cinatra core ships no LinkedIn client code. Every per-connection token use passes the host's instance-connection access gate before a call is made.
+
 ## Works with
 
 - LinkedIn
