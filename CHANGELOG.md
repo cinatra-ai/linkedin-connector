@@ -3,6 +3,25 @@
 All notable changes to this project are documented here, derived from the
 project's merged pull request and release-tag history.
 
+## v0.1.6 — 2026-07-07
+
+Pairs with Cinatra 0.1.7, which removes the core LinkedIn client.
+
+- feat(register): own the LinkedIn API client, relocated from Cinatra core and registered under the same existing host capability id (provider flip, no contract change), persisting and authorizing through published host capabilities including the instance-connection gate (cinatra#975 W3) (#42)
+- fix(manifest): reconcile the `cinatra.vendor` declaration to the first-party fleet convention; the integrated platform remains conveyed by the display name (#41)
+- ci: cut-release dispatch workflow for Actions-actor release and tag creation (#45)
+- Note: versions 0.1.4 and 0.1.5 were skipped — those tag names were consumed by deleted releases and immutable-tag rules prevent their reuse (#43, #44, #46).
+
+## v0.1.3 — 2026-07-04
+
+- fix(mcp): bind LinkedIn publish identity to the trusted session actor (#35)
+- feat: final connection access-scoping declaration — default scope "user" (cinatra#954 W4) (#39)
+- fix(ui): shadcn raw-element fixes + ramp ui-gate to error (#26)
+- chore(deps): declare cinatra.consumes for closure-gate enrollment (#36); declare cross-extension deps as semver ranges (#37)
+- docs: expand README to the org standard (#24) (#25); CHANGELOG reconstructed from tag + merged-PR history (#38)
+- chore: strip private tracker references from public source and workflow comments (#30, #33)
+- ci: adopt source-leak-gate (#27, #28); re-vendor the ui-gate preset with the dynamic-import ban (#29); pin the release workflow to the gated reusable extension-release flow (release-approval wall) (#34)
+
 ## v0.1.2 — 2026-06-25
 
 - ci: add truthful-attribution-gate in WARN (advisory) mode (#19)
@@ -33,18 +52,4 @@ project's merged pull request and release-tag history.
 ## v0.1.0 — 2026-06-03
 
 - Initial release.
-
-## Unreleased
-
-- docs(readme): expand README to the org standard (#24) (#25)
-- fix(ui): shadcn raw-element fixes + ramp ui-gate to error (#26)
-- ci: adopt source-leak-gate (#27)
-- ci: adopt source-leak-gate (#28)
-- ci(ui-gate): re-vendor preset with Block-C (dynamic-import ban) + bump pin to v0.1.1 (#29)
-- chore: strip private engineering-tracker refs from public source (#30)
-- chore: strip private tracker references from workflow comments (#33)
-- ci(release): pin reusable-extension-release to gated v0.1.1 (release-approval wall) (#34)
-- fix(mcp): bind LinkedIn publish identity to the trusted session actor (#35)
-- chore(deps): declare cinatra.consumes for closure-gate enrollment (#36)
-- chore(deps): declare cross-extension deps as semver ranges (#37)
 
