@@ -1,11 +1,14 @@
 import "server-only";
+import { Suspense } from "react";
 import Link from "next/link";
 import type { Metadata } from "next";
 import type { ExtensionHostContext } from "@cinatra-ai/sdk-extensions";
 import { Main, PageHeader, PageContent } from "@cinatra-ai/sdk-ui/marketplace";
-import { NangoUserConnectButton } from "@cinatra-ai/sdk-ui/marketplace";
+import { SearchParamToast } from "@cinatra-ai/sdk-ui/search-param-toast";
 import { getLinkedInDeps } from "./deps";
 import { Alert, AlertDescription } from "./components/ui/alert";
+import { LinkedInConnectSection } from "./linkedin-connect-section";
+import { LINKEDIN_FLASH_TOASTS } from "./lib/linkedin-flash";
 
 // Per-user LinkedIn connect surface (cinatra-ai/linkedin-connector#9). Mirrors
 // gmail-setup-impl.tsx: the user connects their own LinkedIn account through
@@ -28,9 +31,6 @@ export const metadata: Metadata = { title: "LinkedIn | Cinatra" };
 export const dynamic = "force-dynamic";
 
 type SearchParams = Record<string, string | string[] | undefined>;
-function pick(v: string | string[] | undefined) {
-  return Array.isArray(v) ? v[0] : v;
-}
 
 const OAUTH_SETUP_HREF = "/connectors/cinatra-ai/linkedin-oauth-connector/setup";
 
@@ -43,9 +43,6 @@ export async function LinkedInConnectorPageImpl(props: LinkedInConnectorPageImpl
     throw new Error("[linkedin-connector] no userId on actor");
   }
   const userId = actor.userId;
-
-  const sp = (await (props.searchParams ?? Promise.resolve({}))) as SearchParams;
-  const error = pick(sp.error);
 
   // Drive the missing-credentials prerequisite from the SECRET-FREE aggregate
   // status, NOT from getSettings() — a workspace-visible page must not pull the
@@ -69,25 +66,22 @@ export async function LinkedInConnectorPageImpl(props: LinkedInConnectorPageImpl
       ? await getLinkedInDeps().listDestinations({ scope: "user", userId })
       : [];
 
-  // Suppress a stale "authorization expired" error once reconnected (the client
-  // router.refresh() re-renders with the same ?error= URL param still present).
-  const visibleError =
-    connection && error?.includes("authorization expired") ? undefined : error;
-
   return (
     <Main className="min-h-screen">
+      {/* Codes-only flash island: a failed Nango OAuth connect attempt writes a
+          canonical ?error=<code> (client-side, no server redirect — see
+          ./linkedin-connect-section.tsx) that this maps to a STATIC toast
+          message (./lib/linkedin-flash.ts). Its one-shot param-strip also
+          retires the old "suppress the stale error after reconnect" hack. */}
+      <Suspense fallback={null}>
+        <SearchParamToast toasts={LINKEDIN_FLASH_TOASTS} />
+      </Suspense>
       <PageHeader
         title="LinkedIn"
         description="Connect your LinkedIn account to publish posts to your member feed or an organization page."
         className="max-w-3xl"
       />
       <PageContent className="max-w-3xl flex flex-col gap-6 pb-8">
-        {visibleError ? (
-          <Alert variant="destructive" className="rounded-control">
-            <AlertDescription>{visibleError}</AlertDescription>
-          </Alert>
-        ) : null}
-
         {!credentialsConfigured ? (
           <Alert className="rounded-control">
             <AlertDescription>
@@ -110,19 +104,11 @@ export async function LinkedInConnectorPageImpl(props: LinkedInConnectorPageImpl
                 : "Not connected"}
             </p>
           </div>
-          <NangoUserConnectButton
-            connectorKey="linkedin"
-            reconnectConnectionId={connection?.connectionId}
+          <LinkedInConnectSection
             connected={Boolean(connection)}
-            connectLabel="Connect LinkedIn"
-            reconnectLabel="Reconnect"
+            reconnectConnectionId={connection?.connectionId}
             nangoFrontendConfig={nangoFrontendConfig}
-            disabled={!credentialsConfigured}
-            prerequisiteErrorMessage={
-              credentialsConfigured
-                ? undefined
-                : "Configure the LinkedIn app credentials in LinkedIn OAuth first."
-            }
+            credentialsConfigured={credentialsConfigured}
           />
         </section>
 
