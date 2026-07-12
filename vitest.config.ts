@@ -23,20 +23,27 @@ import { createRequire } from "node:module";
 // succeeds and no alias applies, so the monorepo's test run exercises the
 // real host code, never a stub.
 const stubs = path.join(__dirname, "src/__tests__/__stubs__");
+// `@cinatra-ai/sdk-ui/tabs`'s stub lives under `__tests__/fixtures/`, not
+// `__tests__/__stubs__/` — it is the one stub that imports `radix-ui`
+// directly (the real primitive's own implementation), which the org
+// ui-design-system lint gate bans outside `components/ui`/`src/ui`;
+// `__tests__/fixtures/**` is that gate's documented lint-fixture carve-out.
+const fixtures = path.join(__dirname, "src/__tests__/fixtures");
 const require = createRequire(import.meta.url);
 
-function resolvableOrStub(specifier: string, stubFile: string) {
+function resolvableOrStub(specifier: string, stubFile: string, stubDir = stubs) {
   try {
     require.resolve(specifier);
     return null;
   } catch {
-    return { find: specifier, replacement: path.join(stubs, stubFile) };
+    return { find: specifier, replacement: path.join(stubDir, stubFile) };
   }
 }
 
 const alias = [
   resolvableOrStub("@cinatra-ai/sdk-ui/search-param-toast", "search-param-toast.tsx"),
   resolvableOrStub("@cinatra-ai/sdk-ui/marketplace", "sdk-ui-marketplace.tsx"),
+  resolvableOrStub("@cinatra-ai/sdk-ui/tabs", "tabs.tsx", fixtures),
   resolvableOrStub("next/navigation", "next-navigation.ts"),
   resolvableOrStub("sonner", "sonner.ts"),
 ].filter((entry): entry is { find: string; replacement: string } => entry !== null);
