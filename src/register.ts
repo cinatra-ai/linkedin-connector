@@ -50,7 +50,7 @@
 // can meet during skew.
 
 import "server-only";
-import type { ExtensionHostContext } from "@cinatra-ai/sdk-extensions";
+import type { ExtensionHostContext, ObjectsProvider } from "@cinatra-ai/sdk-extensions";
 import { linkedInSocialMediaConnector } from "./connector";
 import { registerLinkedInConnector, type LinkedInConnectorDeps } from "./deps";
 import {
@@ -61,6 +61,11 @@ import {
   type LinkedInConnectionGateSurface,
   type LinkedInNangoSurface,
 } from "./linkedin-api";
+import {
+  buildLinkedinPostDraftActor,
+  writeLinkedinPostDraftWith,
+  type LinkedinPostDraftInput,
+} from "./integration/post-draft-writer-core";
 
 const PACKAGE_NAME = "@cinatra-ai/linkedin-connector";
 
@@ -186,6 +191,45 @@ function buildHostBoundDeps(
   };
 }
 
+// --- LinkedIn member post-draft registration (cinatra#1457, epic #1448) -------
+// The connector's half of the `@cinatra-ai/linkedin:post-draft` DRAFTABLE
+// lifecycle: it WRITES draft rows for the HOST-registered
+// `@cinatra-ai/linkedin:post-draft` type (packages/objects/.../register-types.ts,
+// #1808) through the host objects surface. Unlike the wordpress:post /
+// drupal:node external-pointer writers, a linkedin draft carries authored
+// CONTENT (the post-draft-writer-core leaf validates it fail-closed against the
+// LinkedIn per-network constraints before write). The draft→scheduled→published
+// state machine and the publish RECEIPTS (post URN/URL) are the publication
+// ledger's job (cinatra#1450/#1774) — this writer never writes a receipt or a
+// lifecycle transition. The caller (the host draft/publish-prep trigger)
+// resolves the `linkedin-post-draft-writer` capability and supplies the draft
+// content + the org/user the draft actor is minted from. Resolving the objects
+// provider does NO I/O at registration; the impl fails loud at WRITE time if the
+// host never wired the objects surface (an old host), so a draft is never
+// written unguarded.
+
+/** The host objects-integration service shape (structural mirror — the connector
+ * compiles against any host SDK that meets it; the host binds the real
+ * `objectTypeRegistry` / `objects_save` surface at boot). */
+type HostObjectsIntegrationShape = { getObjectsProvider(): ObjectsProvider | null };
+
+/** Resolve the host objects provider, or null when the host never published the
+ * objects-integration service. */
+function hostObjectsProvider(ctx: ExtensionHostContext): ObjectsProvider | null {
+  const provider = ctx.capabilities.resolveProviders("@cinatra-ai/host:objects-integration")[0];
+  return (provider?.impl as HostObjectsIntegrationShape | undefined)?.getObjectsProvider() ?? null;
+}
+
+/** The `linkedin-post-draft-writer` capability payload: a validated member
+ * post-draft (content + member destination + optional visibility/media/
+ * provenance) plus the org/user the draft actor is minted from. */
+export type LinkedinPostDraftWriteRequest = LinkedinPostDraftInput & {
+  /** The org the draft row is scoped to (REQUIRED — objects_save rejects a null org). */
+  orgId: string;
+  /** The user, when the trigger is user-attributed. */
+  userId?: string | null;
+};
+
 export function register(ctx: ExtensionHostContext): void {
   ctx.capabilities.registerProvider("social-post", {
     packageName: PACKAGE_NAME,
@@ -209,4 +253,31 @@ export function register(ctx: ExtensionHostContext): void {
   // hot-update digest swap — re-binds fresh lazy resolvers, so a stale deps
   // object can never outlive its digest.
   registerLinkedInConnector(buildHostBoundDeps(service));
+
+  // cinatra#1457 — the connector-owned `linkedin:post-draft` DRAFT writer. The
+  // host draft/publish-prep trigger resolves this capability and supplies the
+  // draft content + org/user; the impl validates the content fail-closed against
+  // the LinkedIn per-network constraints, mints the draft actor, and upserts the
+  // DRAFT row (idempotent host-side by (runId, destinationId)) through the host
+  // objects surface. Writes draft content only — never a receipt or a lifecycle
+  // transition (those ride the publication ledger). Building the impl does NO
+  // host-service resolution and NO I/O (probe-safe) — the objects provider
+  // resolves lazily at write time.
+  ctx.capabilities.registerProvider("linkedin-post-draft-writer", {
+    packageName: PACKAGE_NAME,
+    impl: {
+      writeDraft: async (request: LinkedinPostDraftWriteRequest) => {
+        const provider = hostObjectsProvider(ctx);
+        if (!provider) {
+          throw new Error(`${PACKAGE_NAME}: host objects surface is not wired`);
+        }
+        const { orgId, userId, ...draft } = request;
+        return writeLinkedinPostDraftWith(
+          provider,
+          draft,
+          buildLinkedinPostDraftActor({ orgId, userId: userId ?? null }),
+        );
+      },
+    },
+  });
 }
