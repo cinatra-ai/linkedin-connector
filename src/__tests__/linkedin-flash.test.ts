@@ -23,7 +23,7 @@ describe("LINKEDIN_FLASH_TOASTS (flash-code path)", () => {
   });
 
   it("never toasts URL/provider-derived text — every message is one of the static strings", () => {
-    const known = new Set(Object.values(LINKEDIN_ERROR_MESSAGES));
+    const known = new Set<string>(Object.values(LINKEDIN_ERROR_MESSAGES));
     for (const entry of LINKEDIN_FLASH_TOASTS) {
       expect(known.has(entry.message)).toBe(true);
     }
