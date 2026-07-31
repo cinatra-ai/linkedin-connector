@@ -3,9 +3,17 @@
 // LinkedInConnectSection's onError wiring without the real host-internal
 // package (unresolvable standalone — see __stubs__/next-navigation.ts). Only
 // the props LinkedInConnectSection actually passes are modeled; the real
-// NangoUserConnectButton's Nango-session/iframe plumbing is out of scope for
-// this repo's own connect-code-emission test — the cinatra monorepo exercises
-// the real button against the real Nango Connect UI.
+// NangoUserConnectButton's Nango-session/iframe plumbing is out of scope for a
+// connect-code-emission unit test.
+//
+// Aliased UNCONDITIONALLY, in both layouts (cinatra#2288). This file is a
+// behaviour SIMULATOR, not a resolution fallback: it fires `onError` on click
+// and carries `data-testid="nango-connect-button"`, neither of which the real
+// button has — it opens a real Nango Connect session instead. So the earlier
+// claim that the monorepo run exercises the real button was never achievable
+// for THIS test; with the real module resolved the test simply could not find
+// its button or provoke the error path. Real Nango Connect UI behaviour is
+// covered end-to-end host-side, not here.
 "use client";
 
 import { createElement, type ReactNode } from "react";
