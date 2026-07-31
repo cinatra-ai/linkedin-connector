@@ -40,12 +40,51 @@ function resolvableOrStub(specifier: string, stubFile: string, stubDir = stubs) 
   }
 }
 
+// Aliased in BOTH layouts, never conditionally (cinatra#2288). Four of the
+// specifiers below are test SEAMS or inert guards, not host code under test,
+// and "use the real one when the monorepo resolves it" is wrong for each:
+//
+//   * `next/navigation` — `useRouter()` throws
+//     `invariant expected app router to be mounted` outside a mounted Next App
+//     Router. Inside the monorepo the real module resolves, the conditional
+//     alias stepped aside, and all 7 DOM assertions in this repo died on that
+//     invariant — in the very layout this repo's own CI defers its tests to.
+//   * `sonner` — the assertions are
+//     `expect(toast.error).toHaveBeenCalledWith(...)` against the vi.fn()
+//     spies the TEST imports from `./__stubs__/sonner`. If the component
+//     resolves the real `sonner`, it calls a different object and the
+//     assertion can only be vacuous or red.
+//   * `server-only` — a bare `throw` outside a bundler `react-server`
+//     condition; it made src/__tests__/register.test.ts uncollectable
+//     ("0 test") in both layouts since the file was added. See
+//     __stubs__/server-only.ts.
+//   * `@cinatra-ai/sdk-ui/marketplace` — __stubs__/sdk-ui-marketplace.tsx is a
+//     behaviour SIMULATOR, not a resolution fallback: its
+//     <NangoUserConnectButton> fires `onError("Simulated Nango Connect UI
+//     provider error")` on click and carries `data-testid=
+//     "nango-connect-button"`. The real button has neither — it opens a real
+//     Nango Connect session — so with the real module resolved, the
+//     connect-section test could not find its button OR provoke the error path
+//     it exists to pin. Note the breadth: this alias covers the WHOLE
+//     `marketplace` entrypoint, so `Main` / `PageHeader` / `PageContent` /
+//     `StatusPill` resolve to the stub too. A test-local `vi.mock` would be
+//     narrower, but it needs the specifier to RESOLVE — which it does not in
+//     the standalone layout — so the alias is the only form that works in both.
+//
+// The code actually exercised is unchanged: the real
+// `@cinatra-ai/sdk-ui` <SearchParamToast>, this repo's real
+// linkedin-connect-section.tsx, and its real register()/flash config.
+function alwaysStub(specifier: string, stubFile: string, stubDir = stubs) {
+  return { find: specifier, replacement: path.join(stubDir, stubFile) };
+}
+
 const alias = [
   resolvableOrStub("@cinatra-ai/sdk-ui/search-param-toast", "search-param-toast.tsx"),
-  resolvableOrStub("@cinatra-ai/sdk-ui/marketplace", "sdk-ui-marketplace.tsx"),
+  alwaysStub("@cinatra-ai/sdk-ui/marketplace", "sdk-ui-marketplace.tsx"),
   resolvableOrStub("@cinatra-ai/sdk-ui/tabs", "tabs.tsx", fixtures),
-  resolvableOrStub("next/navigation", "next-navigation.ts"),
-  resolvableOrStub("sonner", "sonner.ts"),
+  alwaysStub("next/navigation", "next-navigation.ts"),
+  alwaysStub("sonner", "sonner.ts"),
+  alwaysStub("server-only", "server-only.ts"),
 ].filter((entry): entry is { find: string; replacement: string } => entry !== null);
 
 export default defineConfig({
