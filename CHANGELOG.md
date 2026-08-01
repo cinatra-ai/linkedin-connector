@@ -7,7 +7,7 @@ project's merged pull request and release-tag history.
 
 Pairs with Cinatra 0.1.7, which removes the core LinkedIn client.
 
-- feat(register): own the LinkedIn API client, relocated from Cinatra core and registered under the same existing host capability id (provider flip, no contract change), persisting and authorizing through published host capabilities including the instance-connection gate (cinatra#975 W3) (#42)
+- feat(register): own the LinkedIn API client, relocated from Cinatra core and registered under the same existing host capability id (provider flip, no contract change), persisting and authorizing through published host capabilities including the instance-connection gate (#42)
 - fix(manifest): reconcile the `cinatra.vendor` declaration to the first-party fleet convention; the integrated platform remains conveyed by the display name (#41)
 - ci: cut-release dispatch workflow for Actions-actor release and tag creation (#45)
 - Note: versions 0.1.4 and 0.1.5 were skipped — those tag names were consumed by deleted releases and immutable-tag rules prevent their reuse (#43, #44, #46).
@@ -15,7 +15,7 @@ Pairs with Cinatra 0.1.7, which removes the core LinkedIn client.
 ## v0.1.3 — 2026-07-04
 
 - fix(mcp): bind LinkedIn publish identity to the trusted session actor (#35)
-- feat: final connection access-scoping declaration — default scope "user" (cinatra#954 W4) (#39)
+- feat: final connection access-scoping declaration — default scope "user" (#39)
 - fix(ui): shadcn raw-element fixes + ramp ui-gate to error (#26)
 - chore(deps): declare cinatra.consumes for closure-gate enrollment (#36); declare cross-extension deps as semver ranges (#37)
 - docs: expand README to the org standard (#24) (#25); CHANGELOG reconstructed from tag + merged-PR history (#38)
@@ -40,7 +40,7 @@ Pairs with Cinatra 0.1.7, which removes the core LinkedIn client.
 - Register the LinkedIn provider behind the social-post capability from a serverEntry (#6)
 - chore: npm files allowlist + git-archive export-ignore (packaging hygiene) (#7)
 - ci: adopt the org ui-design-system gate (#8)
-- Bind the LinkedIn connection surface through a host deps slot (cinatra#172 Stage H4) (#10)
+- Bind the LinkedIn connection surface through a host deps slot (#10)
 - chore: Configure Renovate (#11)
 - Add the per-user LinkedIn OAuth connect flow; move the admin form to linkedin-oauth-connector (#9) (#13)
 - Prune unused vendored UI primitives (badge/button/input/label) (#14)
