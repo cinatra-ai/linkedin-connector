@@ -29,6 +29,13 @@ const stubs = path.join(__dirname, "src/__tests__/__stubs__");
 // ui-design-system lint gate bans outside `components/ui`/`src/ui`;
 // `__tests__/fixtures/**` is that gate's documented lint-fixture carve-out.
 const fixtures = path.join(__dirname, "src/__tests__/fixtures");
+// `@cinatra-ai/design-primitives` is the host-shared primitives module
+// (cinatra-ai/cinatra#3510). Its id is VIRTUAL — the contract publishes no
+// package under it and forbids declaring it as a dependency or a peer; the
+// host resolves it for this connector's source-compiled setup page through its
+// own `compilerOptions.paths`. Standalone there is nothing to resolve, so its
+// double lives OUTSIDE src/ (tests/doubles/), never as package source.
+const doubles = path.join(__dirname, "tests/doubles");
 const require = createRequire(import.meta.url);
 
 function resolvableOrStub(specifier: string, stubFile: string, stubDir = stubs) {
@@ -80,6 +87,7 @@ function alwaysStub(specifier: string, stubFile: string, stubDir = stubs) {
 
 const alias = [
   resolvableOrStub("@cinatra-ai/sdk-ui/search-param-toast", "search-param-toast.tsx"),
+  resolvableOrStub("@cinatra-ai/design-primitives", "design-primitives.tsx", doubles),
   alwaysStub("@cinatra-ai/sdk-ui/marketplace", "sdk-ui-marketplace.tsx"),
   resolvableOrStub("@cinatra-ai/sdk-ui/tabs", "tabs.tsx", fixtures),
   alwaysStub("next/navigation", "next-navigation.ts"),

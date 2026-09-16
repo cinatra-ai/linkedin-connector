@@ -3,6 +3,19 @@
 All notable changes to this project are documented here, derived from the
 project's merged pull request and release-tag history.
 
+## v0.1.7 — 2026-09-16
+
+- feat(ui): take the `alert` primitive from the host-shared module
+  `@cinatra-ai/design-primitives` instead of the vendored byte copy, and delete
+  `src/components/ui/alert.tsx`. The module id is virtual and is deliberately
+  declared neither as a dependency nor as a peer: the host resolves it for this
+  connector's source-compiled setup page.
+- fix(ci): mirror the monorepo gate's HOST-SERVED first-party class into the
+  vendored `extension-kind-gate.mjs`, so a host-served module id is classified
+  as allowed rather than as a non-SDK first-party dependency.
+- ci: commit the repository's named verification suite
+  `.github/gate-suite.json` (suiteId `linkedin-connector-core`).
+
 ## v0.1.6 — 2026-07-07
 
 Pairs with Cinatra 0.1.7, which removes the core LinkedIn client.

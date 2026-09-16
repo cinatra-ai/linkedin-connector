@@ -7,7 +7,7 @@ import { Main, PageHeader, PageContent } from "@cinatra-ai/sdk-ui/marketplace";
 import { SearchParamToast } from "@cinatra-ai/sdk-ui/search-param-toast";
 import { Tabs, TabsContent, TabsListRow, TabsTrigger } from "@cinatra-ai/sdk-ui/tabs";
 import { getLinkedInDeps } from "./deps";
-import { Alert, AlertDescription } from "./components/ui/alert";
+import { Alert, AlertDescription } from "@cinatra-ai/design-primitives";
 import { LinkedInConnectSection } from "./linkedin-connect-section";
 import { LINKEDIN_FLASH_TOASTS } from "./lib/linkedin-flash";
 
