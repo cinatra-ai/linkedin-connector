@@ -79,6 +79,20 @@ function relativeImports(contents: string): string[] {
   return [...contents.matchAll(/from\s+["'](\.[^"']*)["']/g)].map((m) => m[1]);
 }
 
+/** Every `.ts`/`.tsx` file under src/, this package's own tests INCLUDED. */
+function everyFile(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    if (statSync(full).isDirectory()) {
+      out.push(...everyFile(full));
+      continue;
+    }
+    if (entry.endsWith(".ts") || entry.endsWith(".tsx")) out.push(full);
+  }
+  return out;
+}
+
 describe("host-shared design primitives (cinatra#3510)", () => {
   it("keeps no byte copy of a product primitive under src/components/ui/", () => {
     const uiDir = path.join(SRC, "components", "ui");
@@ -121,5 +135,30 @@ describe("host-shared design primitives (cinatra#3510)", () => {
       "peerDependenciesMeta",
     ].filter((field) => Object.keys(manifest[field] ?? {}).includes(SHARED_MODULE));
     expect(declared).toEqual([]);
+  });
+
+  it("keeps the ambient declaration of the virtual id out of the host's program", () => {
+    // The package types the virtual id for its OWN standalone `tsc` with an
+    // ambient `declare module`. An ambient declaration beats a tsconfig `paths`
+    // mapping for every file of the program that reads it, so inside the host it
+    // must never be part of the program: the host maps the same id onto its real
+    // module (`src/lib/artifacts/host-shared-primitives.ts`, the contract's
+    // BUILD-TIME road) and serves the whole frozen export list, while this
+    // package declares two names — the host build would fail TS2305 on every
+    // other name (cinatra main's own
+    // tests/fixtures/design-primitives-build-time-import.tsx imports `AlertTitle`
+    // and `Button` from the id).
+    //
+    // cinatra main's tsconfig includes `**/*.ts` and excludes
+    // `**/__tests__/fixtures/**`, and the extension tree is materialised at
+    // `extensions/cinatra-ai/linkedin-connector/`. So the declaration is safe
+    // under `src/__tests__/fixtures/` and nowhere else under src/; this pins the
+    // placement instead of leaving it to a file comment.
+    const declaring = everyFile(SRC)
+      .filter((file) =>
+        readFileSync(file, "utf8").includes(`declare module "${SHARED_MODULE}"`),
+      )
+      .map((file) => path.relative(REPO_ROOT, file));
+    expect(declaring).toEqual(["src/__tests__/fixtures/design-primitives.d.ts"]);
   });
 });
