@@ -37,13 +37,6 @@ const LINKEDIN_CONFIG_KEY = "linkedin";
 /** The open nango connector vendor key this client's connections live under. */
 const LINKEDIN_CONNECTOR_KEY = "linkedin";
 
-const LINKEDIN_OAUTH_SCOPES = [
-  "openid",
-  "profile",
-  "email",
-  "w_member_social",
-].join(" ");
-
 // ---------------------------------------------------------------------------
 // Host surfaces (local STRUCTURAL shapes — the serverEntry graph keeps SDK
 // imports type-only, so the shapes are declared here and the impls arrive as
@@ -177,6 +170,11 @@ type LinkedInAPISettings = {
   redirectUri?: string;
   accounts: LinkedInAccountConnection[];
   loggingEnabled?: boolean;
+  /** Set by the LinkedIn OAuth connector's admin form for an app whose one
+   * product is the Community Management API: such an app has no OpenID
+   * scopes, so the member is read through v2/me, and only the client pair
+   * saved with the flag belongs to it. Only a stored boolean `true` is on. */
+  organizationPosting?: boolean;
 };
 
 type LinkedInUserInfoResponse = {
@@ -186,6 +184,18 @@ type LinkedInUserInfoResponse = {
   family_name?: string;
   email?: string;
   picture?: string;
+};
+
+type LinkedInMeResponse = {
+  id?: string;
+  localizedFirstName?: string;
+  localizedLastName?: string;
+};
+
+type LinkedInMemberIdentity = {
+  memberId: string;
+  name: string;
+  email?: string;
 };
 
 type LinkedInOrganizationAclResponse = {
@@ -326,11 +336,22 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
     await host.capture({ label: input.label, kind: input.kind, body: content });
   }
 
-  function readSettings(): LinkedInAPISettings {
-    const stored = host.config().read<LinkedInAPISettings>(LINKEDIN_CONFIG_KEY, { accounts: [] });
+  /** The admin-owned part of the stored row: the client pair and the
+   * organization-posting flag. Only the LinkedIn OAuth connector's form writes
+   * them, always together (a Community Management flag over an OpenID pair is
+   * an "Invalid scope" Connect). */
+  function readAdminOwnedSettings(stored: Partial<LinkedInAPISettings>) {
     return {
       clientId: typeof stored.clientId === "string" && stored.clientId.trim() ? stored.clientId.trim() : undefined,
       clientSecret: typeof stored.clientSecret === "string" && stored.clientSecret.trim() ? stored.clientSecret.trim() : undefined,
+      organizationPosting: stored.organizationPosting === true,
+    };
+  }
+
+  function readSettings(): LinkedInAPISettings {
+    const stored = host.config().read<LinkedInAPISettings>(LINKEDIN_CONFIG_KEY, { accounts: [] });
+    return {
+      ...readAdminOwnedSettings(stored),
       redirectUri: readStoredLinkedInRedirectUri(stored.redirectUri),
       accounts: Array.isArray(stored.accounts)
         ? stored.accounts
@@ -365,10 +386,19 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
     };
   }
 
+  /** Writes the caller's accounts, logging flag and redirect URI. The client
+   * pair and the organization-posting flag are re-read from the row right
+   * before the write and never taken from the caller's snapshot: a Connect
+   * that awaits LinkedIn between its read and this write must not revert an
+   * admin save made meanwhile, nor drop the flag. */
   function writeSettings(value: LinkedInAPISettings) {
+    const adminOwned = readAdminOwnedSettings(
+      host.config().read<Partial<LinkedInAPISettings>>(LINKEDIN_CONFIG_KEY, {}),
+    );
     host.config().write(LINKEDIN_CONFIG_KEY, {
-      clientId: value.clientId,
-      clientSecret: value.clientSecret,
+      clientId: adminOwned.clientId,
+      clientSecret: adminOwned.clientSecret,
+      organizationPosting: adminOwned.organizationPosting,
       accounts: value.accounts,
       loggingEnabled: value.loggingEnabled,
       redirectUri: value.redirectUri,
@@ -402,6 +432,29 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
       throw new Error(payload?.message || payload?.error_description || "LinkedIn API request failed.");
     }
     return payload;
+  }
+
+  /** The member behind an access token. A Community Management app has no
+   * OpenID scopes, so it reads v2/me (r_basicprofile); every other app reads
+   * v2/userinfo exactly as before. */
+  async function readLinkedInMemberIdentity(accessToken: string, organizationPosting: boolean): Promise<LinkedInMemberIdentity> {
+    if (organizationPosting) {
+      const me = await fetchLinkedInJson<LinkedInMeResponse>("https://api.linkedin.com/v2/me", accessToken);
+      return {
+        memberId: String(me?.id ?? "").trim(),
+        name: [me?.localizedFirstName, me?.localizedLastName].map((value) => String(value ?? "").trim()).filter(Boolean).join(" "),
+        email: undefined,
+      };
+    }
+
+    const userinfo = await fetchLinkedInJson<LinkedInUserInfoResponse>("https://api.linkedin.com/v2/userinfo", accessToken);
+    return {
+      memberId: String(userinfo?.sub ?? "").trim(),
+      name:
+        String(userinfo?.name ?? "").trim() ||
+        [userinfo?.given_name, userinfo?.family_name].map((value) => String(value ?? "").trim()).filter(Boolean).join(" "),
+      email: typeof userinfo?.email === "string" && userinfo.email.trim() ? userinfo.email.trim() : undefined,
+    };
   }
 
   async function resolveLinkedInAccessToken(account: LinkedInAccountConnection) {
@@ -601,10 +654,24 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
       .nango()
       .getNangoOAuth2IntegrationCredentials(linkedinProviderConfigKey());
 
+    // The same precedence as the nango connector's Connect: a Community
+    // Management app is always a different LinkedIn app from an OpenID one, so
+    // with the flag on only the row's own pair counts, and an incomplete row
+    // pair gives no pair. With the flag off, the integration's pair wins.
+    const rowPairComplete = Boolean(stored.clientId && stored.clientSecret);
+    const clientPair = stored.organizationPosting
+      ? {
+          clientId: rowPairComplete ? stored.clientId : undefined,
+          clientSecret: rowPairComplete ? stored.clientSecret : undefined,
+        }
+      : {
+          clientId: nangoCredentials?.clientId || stored.clientId,
+          clientSecret: nangoCredentials?.clientSecret || stored.clientSecret,
+        };
+
     return {
       ...stored,
-      clientId: nangoCredentials?.clientId || stored.clientId,
-      clientSecret: nangoCredentials?.clientSecret || stored.clientSecret,
+      ...clientPair,
       redirectUri: stored.redirectUri || normalizeLinkedInRedirectUri(host.nango().getNangoOAuthCallbackUrl()),
     };
   }
@@ -710,45 +777,6 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
     };
   }
 
-  async function ensureLinkedInIntegration(settings: LinkedInAPISettings) {
-    if (!settings.clientId || !settings.clientSecret) {
-      return;
-    }
-
-    await host.nango().ensureNangoIntegration({
-      provider: "linkedin",
-      providerConfigKey: linkedinProviderConfigKey(),
-      displayName: "Cinatra LinkedIn",
-      credentials: {
-        type: "OAUTH2",
-        client_id: settings.clientId,
-        client_secret: settings.clientSecret,
-        scopes: LINKEDIN_OAUTH_SCOPES,
-      },
-    });
-  }
-
-  async function saveLinkedInOAuthSettings(input: {
-    clientId?: string;
-    clientSecret?: string;
-  }) {
-    const current = await getLinkedInAPISettings();
-    const normalizedRedirectUri = normalizeLinkedInRedirectUri(host.nango().getNangoOAuthCallbackUrl());
-    const nextSettings: LinkedInAPISettings = {
-      ...current,
-      clientId: input.clientId?.trim() || current.clientId,
-      clientSecret: input.clientSecret?.trim() || current.clientSecret,
-      redirectUri: normalizedRedirectUri,
-      accounts: current.accounts,
-      loggingEnabled: current.loggingEnabled,
-    };
-    await ensureLinkedInIntegration(nextSettings);
-    writeSettings({
-      ...nextSettings,
-    });
-    return nextSettings;
-  }
-
   async function saveLinkedInLoggingSettings(enabled: boolean) {
     const current = readSettings();
     writeSettings({
@@ -800,11 +828,9 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
       throw new Error("Unable to load the LinkedIn access token from Nango.");
     }
 
-    const userinfo = await fetchLinkedInJson<LinkedInUserInfoResponse>("https://api.linkedin.com/v2/userinfo", credentials.access_token);
-    const memberId = String(userinfo?.sub ?? "").trim();
-    const memberName =
-      String(userinfo?.name ?? "").trim() ||
-      [userinfo?.given_name, userinfo?.family_name].map((value) => String(value ?? "").trim()).filter(Boolean).join(" ");
+    const identity = await readLinkedInMemberIdentity(credentials.access_token, settings.organizationPosting === true);
+    const memberId = identity.memberId;
+    const memberName = identity.name;
     if (!memberId || !memberName) {
       throw new Error("Unable to load the LinkedIn member profile.");
     }
@@ -828,8 +854,8 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
       memberId,
       name: memberName,
       email:
-        typeof userinfo?.email === "string" && userinfo.email.trim()
-          ? userinfo.email.trim()
+        identity.email
+          ? identity.email
           : typeof connection?.end_user?.email === "string" && connection.end_user.email.trim()
             ? connection.end_user.email.trim()
             : undefined,
@@ -888,8 +914,7 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
       }
 
       accessToken = userConnection.accessToken;
-      const userinfo = await fetchLinkedInJson<LinkedInUserInfoResponse>("https://api.linkedin.com/v2/userinfo", accessToken);
-      memberId = String(userinfo?.sub ?? "").trim();
+      memberId = (await readLinkedInMemberIdentity(accessToken, readSettings().organizationPosting === true)).memberId;
       if (!memberId) {
         throw new Error("Unable to load the LinkedIn member profile.");
       }
@@ -977,7 +1002,6 @@ export function createLinkedInApiClient(host: LinkedInApiHost) {
     listAccounts: listLinkedInAccounts,
     readAccountById: readLinkedInAccountById,
     listDestinations: listLinkedInDestinations,
-    saveOAuthSettings: saveLinkedInOAuthSettings,
     saveLoggingSettings: saveLinkedInLoggingSettings,
     saveAccountFromNangoConnection: saveLinkedInAccountFromNangoConnection,
     deleteAccount: deleteLinkedInAccount,
