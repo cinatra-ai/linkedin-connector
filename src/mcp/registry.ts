@@ -31,6 +31,16 @@ const TOOL_META: Record<string, { description: string; inputSchema: z.ZodTypeAny
   },
 };
 
+// cinatra#3745: `linkedin_post_publish` publishes on a person's behalf, so its
+// registration declares `outward`: the host holds each call of it during an
+// agent run for the person's recorded decision. It takes free text and no
+// stored item, so it names no subject. No other tool here acts outward. A
+// declaration only adds a hold; it never authorizes a call. A host that does
+// not read the field ignores it. Spread from a constant so an SDK config type
+// without the field still accepts it.
+const OUTWARD_TOOL_NAMES = new Set(["linkedin_post_publish"]);
+const OUTWARD = { outward: {} };
+
 export function registerLinkedInPrimitives(
   server: ExtensionMcpToolServer,
   resolveActor?: ConnectorActorResolver,
@@ -45,6 +55,7 @@ export function registerLinkedInPrimitives(
         title: name,
         description: meta.description,
         inputSchema: meta.inputSchema,
+        ...(OUTWARD_TOOL_NAMES.has(name) ? OUTWARD : {}),
       },
       async (input: unknown): Promise<ExtensionMcpToolResult> => {
         // Build the actor SERVER-SIDE from the host-provided resolver; never
